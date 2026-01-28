@@ -10,6 +10,16 @@ Fuffy works with a stack: you can push numbers or strings, perform arithmetic, p
 
 ---
 
+## Building
+To Build the command is
+```text
+main.py [program.fuffy] [-r]
+```
+
+If you put ```-r``` the program will run after compiling
+
+---
+
 ## Writing Programs
 
 * **Numbers**: Writing a number pushes it onto the stack.
