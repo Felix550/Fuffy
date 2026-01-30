@@ -42,15 +42,15 @@ If you put ```-r``` the program will run after compiling
 
 | Command | Description                                                 | Example                                                                       |
 | ------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `prt`   | Print the top of the stack and remove it                    | `69 prt` prints `69` and removes it from stack                                |
-| `dprt`  | Print the top of the stack without removing it              | `104 dprt prt` prints `104` without removing, then `prt` consumes it          |
-| `sum`   | Add the top two numbers                                     | `34 35 sum prt` prints `69`                                                   |
-| `sub`   | Subtract top number from second                             | `500 100 sub prt` prints `400`                                                |
-| `mul`   | Multiply top two numbers                                    | `2 10 mul prt` prints `20`                                                    |
-| `idiv`  | Integer division; produces quotient and remainder           | `20 6 idiv 1 rem prt` prints quotient, `20 6 idiv 2 rem prt` prints remainder |
+| `dump`  | Dumps the top of the stack and remove it                    | `69 dump` prints `69` and removes it from stack                               |
+| `ddump` | Dumps the top of the stack without removing it              | `104 ddump dump` prints `104` without removing, then `dump` consumes it       |
+| `sum`   | Add the top two numbers                                     | `34 35 sum dump` prints `69`                                                  |
+| `sub`   | Subtract top number from second                             | `500 100 sub dump` prints `400`                                               |
+| `mul`   | Multiply top two numbers                                    | `2 10 mul dump` prints `20`                                                   |
+| `idiv`  | Integer division; produces quotient and remainder           | `20 6 idiv 1 rem dump` prints quotient, `20 6 idiv 2 rem prt` prints remainder|
 | `rem`   | Remove an item from the stack by position                   | `34 35 36 2 rem` removes second from top (35)                                 |
-| `sl`    | Get the current number of items in the stack                | `sl rprt` prints the stack length                                             |
-| `rprt`  | Print the value of the last computed result or stack length | `rprt` prints `RAX` or last result                                            |
+| `sl`    | Get the current number of items in the stack                | `sl rdump` prints the stack length                                            |
+| `rdump` | Dumps the value of the last computed result like sl         | `rdump` prints `RAX` or last result                                           |
 | `sclr`  | Clear the stack                                             | `sclr` removes all items from the stack                                       |
 
 ---
@@ -64,11 +64,13 @@ Fuffy automatically interprets common escape sequences inside strings:
 * `\\` → backslash
 * `\"` → double quote
 * `\'` → apostrophe
+* `%%` → percent
+  
 
 ### Example
 
 ```text
-"Hello\n\tMy name is 'Felix'\n" prt
+"Hello\n\tMy name is 'Felix'\n" dump
 ```
 
 Prints:
@@ -84,28 +86,28 @@ Hello
 
 ```text
 ; Strings
-"Hello and Welcome to Fuffy!\n" prt
+"Hello and Welcome to Fuffy!\n" dump
 
 ; Numbers and arithmetic
-69 prt
-34 35 sum prt
-500 100 sub prt
-2 10 mul prt
+69 dump
+34 35 sum dump
+500 100 sub dump
+2 10 mul dump
 
 ; Removing elements
 34 35 36 2 rem
-prt
-prt
+dump
+dump
 
 ; Integer division
-20 6 idiv 1 rem prt
-20 6 idiv 2 rem prt
+20 6 idiv 1 rem dump
+20 6 idiv 2 rem dump
 
 ; Debug printing
-104 dprt prt
+104 ddump dump
 
 ; Stack utilities
 sl
-rprt
+rdump
 sclr
 ```
