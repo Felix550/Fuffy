@@ -1,6 +1,6 @@
-from enum import Enum
 import subprocess
 import sys
+import difflib
 
 i = 0
 def ilda(reset = False):
@@ -25,7 +25,7 @@ OP_REMOVE = ilda()
 OP_STACKLEN = ilda()
 OP_STACKCLEAR = ilda()
 OP_LOADTOMEMORY = ilda()
-OP_LOADMEMORY = ilda()
+OP_LOADFROMMEMORY = ilda()
 OP_USAGE = ilda()
 
 H_PRINTF = ilda(True)
@@ -81,6 +81,12 @@ def Warn(msg, file=None, row=None, col=None):
         print(f"{bcolors.WARNING}{file}:{row}:{col}: Warning: {msg}{bcolors.ENDC}")
     else:
         print(f"{bcolors.WARNING}Warning: {msg}{bcolors.ENDC}")
+        
+def Success(msg, file=None, row=None, col=None):
+    if file and row and col:
+        print(f"{bcolors.OKGREEN}{file}:{row}:{col}: SUCCESS: {msg}{bcolors.ENDC}")
+    else:
+        print(f"{bcolors.OKGREEN}SUCCESS: {msg}{bcolors.ENDC}")
     
 def Push(x):
     return (OP_PUSH, x)
@@ -124,8 +130,8 @@ def StackClear():
 def LoadToMemory(x):
     return (OP_LOADTOMEMORY, x) #Pop Stack to Memory
 
-def LoadMemory(x):
-    return (OP_LOADMEMORY, x) #Push Memory to Stack
+def LoadFromMemory(x):
+    return (OP_LOADFROMMEMORY, x) #Push Memory to Stack
 
 def Usage(tok,usage):
     return (OP_USAGE,(tok,usage)) #Error(f"Usage of \"{tok}\": {usage}")
@@ -184,8 +190,8 @@ Keywords = {
         "function": Usage("ltm",f"ltm.[register]\nRegisters:\n\t{"\n\t".join([f".{k} : \"{v}\"" for k, v in Memories.items()])}"),
         "helpers": None
     },
-    "ldm": {
-        "function": Usage("ldm",f"ldm.[register]\nRegisters:\n\t{"\n\t".join([f".{k} : \"{v}\"" for k, v in Memories.items()])}"),
+    "lfm": {
+        "function": Usage("lfm",f"lfm.[register]\nRegisters:\n\t{"\n\t".join([f".{k} : \"{v}\"" for k, v in Memories.items()])}"),
         "helpers": None
     }
 }
@@ -288,9 +294,9 @@ def parse_program_from_tokens(tokens,program_path):
             result.append(LoadToMemory(rhs))
             continue
         
-        if tok.startswith("ldm."):
+        if tok.startswith("lfm."):
             _,rhs = tok.split(".")
-            result.append(LoadMemory(rhs))
+            result.append(LoadFromMemory(rhs))
             continue
         
         if tok.startswith("dump."):
@@ -316,7 +322,14 @@ def parse_program_from_tokens(tokens,program_path):
             continue
 
         # invalid token
-        Error(f"\"{tok}\" is not a valid keyword",program_path,r,c)
+        threshold = 0.6  # soglia di similarità
+
+        # trova la prima chiave simile
+        similar_key = next(
+            (k for k in Keywords.keys() if difflib.SequenceMatcher(None, k, tok).ratio() >= threshold),
+            False
+        )
+        Error(f"\"{tok}\" is not a valid keyword{f"\nMaybe you meant: \"{similar_key}\"" if similar_key else ""}",program_path,r,c)
 
     return result
 
@@ -361,15 +374,15 @@ def remove_helpers(f):
     f.write(".reconstruct:\n")
     f.write("    lea r11, [r8 + 8]    ; r11 = destination base (new stack start after removal)\n")
     f.write("    xor r10, r10         ; i = 0\n")
-    f.write("    xor r12, r12         ; j = 0  (usiamo r12 ma non lo preserviamo; se preferisci usa r11/r10 alternativi)\n")
+    f.write("    xor r9, r9         ; j = 0  (usiamo r12 ma non lo preserviamo; se preferisci usa r11/r10 alternativi)\n")
     f.write(".recon_loop:\n")
     f.write("    cmp r10, rcx\n")
     f.write("    jae .done\n")
     f.write("    cmp r10, rdx\n")
     f.write("    je .skip_i\n")
     f.write("    mov rax, [rsp + r10*8]\n")
-    f.write("    mov [r11 + r12*8], rax\n")
-    f.write("    inc r12\n")
+    f.write("    mov [r11 + r9*8], rax\n")
+    f.write("    inc r9\n")
     f.write(".skip_i:\n")
     f.write("    inc r10\n")
     f.write("    jmp .recon_loop\n")
@@ -416,18 +429,24 @@ def string_print(stack, f, debug = False):
         f.write("    ;Debug Dump\n")
         f.write("    mov rcx, [rsp]\n")
         f.write("    xor rax, rax\n")
+        f.write("    sub rsp, 32\n")
         f.write("    call printf\n")
+        f.write("    add rsp, 32\n")
     else:
         f.write("    ;Dump\n")
         f.write("    pop rcx\n")
         f.write("    xor rax, rax\n")
+        f.write("    sub rsp, 32\n")
         f.write("    call printf\n")
+        f.write("    add rsp, 32\n")
         stack.pop()
         
 def printf(f):
     f.write("    ;Printf\n")
     f.write("    xor rax, rax\n")
+    f.write("    sub rsp, 32\n")
     f.write("    call printf\n")
+    f.write("    add rsp, 32\n")
 
 def check_math(stack):
     assert str(stack[-1]).isdigit(), "Can't Do Math Operations with a String"
@@ -533,6 +552,7 @@ def generate_code(program, temp_path):
             stack_len_helpers(f)
             
         f.write("main:\n")
+        f.write("    sub rsp, 40\n")
         f.write("    mov [rel StackBase], rsp\n")
             
         for i in program:
@@ -625,7 +645,7 @@ def generate_code(program, temp_path):
                 f.write("    ;Load To Memory\n")
                 f.write("    pop %s\n" % mem)
                 stack.pop()
-            elif i[0] == OP_LOADMEMORY:
+            elif i[0] == OP_LOADFROMMEMORY:
                 mem = Memories[i[1]]
                 f.write("    ;Load Memory\n")
                 f.write("    push %s\n" % mem)
@@ -636,6 +656,7 @@ def generate_code(program, temp_path):
             else:
                 Error("Can Generate the following Operation Index: %s" % i[0])
         f.write("    xor ecx, ecx\n")
+        f.write("    add rsp, 40\n")
         f.write("    call ExitProcess\n")
 
 def compile_program(program, temp_path, out_name, run):
@@ -644,6 +665,8 @@ def compile_program(program, temp_path, out_name, run):
     subprocess.call(["gcc","%s.o" % out_name, "-o", "%s.exe" % out_name])
     if run:
         subprocess.call(["%s.exe" % out_name])
+        
+
     
 
 if __name__ == "__main__":
@@ -657,7 +680,17 @@ if __name__ == "__main__":
     tokens = tokenize_file(program_path)
     program = parse_program_from_tokens(tokens, program_path)
     run = False
+    
+    out_name = "a"
+    temp_path = "temp.asm"
     if len(arguments) >= 1:
-        if arguments.pop(0) == "-r":
+        if "-mtc" in arguments:
+            Warn("/!\\ Manual Compilation STARTED /!\\")
+            if subprocess.call(["nasm","-f","win64",temp_path,"-o","%s.o" % out_name]) == 0:
+                Success("Created %s.o correctly!" % out_name)
+            if subprocess.call(["gcc","%s.o" % out_name, "-o", "%s.exe" % out_name]) == 0: 
+                Success("Created %s.exe correctly!" % out_name)
+            exit(0)
+        elif "-r" in arguments:
             run = True
-    compile_program(program,"temp.asm", "a", run)
+    compile_program(program,temp_path, out_name, run)
