@@ -16,7 +16,9 @@ To Build the command is
 main.py [program.fuffy] [-r]
 ```
 
-If you put ```-r``` the program will run after compiling
+If you put ```-r``` the program will run after compiling \
+If you put ```-mtc``` the program will ignore all the others aarguments and only compile the temp.asm into an a.exe
+
 
 ---
 
