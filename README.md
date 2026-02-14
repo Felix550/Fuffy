@@ -6,14 +6,14 @@ Fuffy is a lazy stack-based programming language for Windows x64.
 
 ## Overview
 
-Fuffy works with a stack: you can push numbers or strings, perform arithmetic, print values, remove items, and check the stack length. Special sequences like `\n`, `\t`, and escaped quotes are supported inside strings.
+Fuffy works with a stack: you can push numbers or strings, perform arithmetic, print values, remove items and much more!
 
 ---
 
 ## Building
 To Build the command is
 ```text
-main.py [program.fuffy] [-r]
+main.py [program.fuffy] [-r] [.mtc] 
 ```
 
 If you put ```-r``` the program will run after compiling \

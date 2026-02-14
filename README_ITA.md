@@ -6,7 +6,7 @@ Fuffy è un linguaggio di programmazione lazy basato su stack per Windows x64.
 
 ## Panoramica
 
-Fuffy lavora con uno stack: puoi pushare numeri o stringhe, eseguire operazioni aritmetiche, stampare valori, rimuovere elementi e controllare la lunghezza dello stack. Sequenze speciali come `\n`, `\t` e virgolette escape sono supportate all'interno delle stringhe.
+Fuffy lavora con uno stack: puoi pushare numeri o stringhe, eseguire operazioni aritmetiche, stampare valori, rimuovere elementi e molto altro!
 
 ---
 
@@ -15,7 +15,7 @@ Fuffy lavora con uno stack: puoi pushare numeri o stringhe, eseguire operazioni 
 Per compilare il comando è
 
 ```text
-main.py [program.fuffy] [-r]
+main.py [program.fuffy] [-r] [-mtc]
 ```
 
 Se passi `-r` il programma verrà eseguito dopo la compilazione.
