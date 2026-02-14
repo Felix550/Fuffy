@@ -41,23 +41,27 @@ If you put ```-mtc``` the program will ignore all the others aarguments and only
 ---
 
 ## Commands
+    
+| Command            | Description                                                 | Example                                                                           |
+| -------            | ----------------------------------------------------------- | -----------------------------------------------------------------------------     |
+| `dump`             | Dumps the top of the stack and remove it                    | `69 dump` prints `69` and removes it from stack                                   |
+| `dump.[register]`  | Dumps a specific register                                   | `dump.a` prints `rax` content                                                     |
+| `ddump`            | Dumps the top of the stack without removing it              | `104 ddump dump` prints `104` without removing, then `dump` consumes it           |
+| `sum`              | Add the top two numbers                                     | `34 35 sum dump` prints `69`                                                      |
+| `sub`              | Subtract top number from second                             | `500 100 sub dump` prints `400`                                                   |
+| `mul`              | Multiply top two numbers                                    | `2 10 mul dump` prints `20`                                                       |
+| `idiv`\*           | Integer division; produces quotient and remainder           | `20 6 idiv 1 trash dump` prints quotient, `20 6 idiv 2 trash prt` prints remainder|
+| `trash`\*\*        | Remove an item from the stack by position on the stack      | `34 35 36 2 trash` removes second from top (35)                                   |
+| `sl`               | Get the current number of items in the stack                | `sl dump.a` prints the stack length                                               |
+| `sclr`             | Clear the stack                                             | `sclr` removes all items from the stack                                           |
+| `ltm.[register]`   | Loads from the top of the stack to the specified register   | `ltm.a` the top of the stack goes into rax                                        |
+| `lfm.[register]`   | Loads from the specified register to the top of the stack   | `lfm.a` rax goes onto the stack                                                   |
 
-| Command            | Description                                                 | Example                                                                       |
-| -------            | ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `dump`             | Dumps the top of the stack and remove it                    | `69 dump` prints `69` and removes it from stack                               |
-| `dump.[register]`  | Dumps a specific register                                   | `dump.a` prints `rax` content                                                 |
-| `ddump`            | Dumps the top of the stack without removing it              | `104 ddump dump` prints `104` without removing, then `dump` consumes it       |
-| `sum`              | Add the top two numbers                                     | `34 35 sum dump` prints `69`                                                  |
-| `sub`              | Subtract top number from second                             | `500 100 sub dump` prints `400`                                               |
-| `mul`              | Multiply top two numbers                                    | `2 10 mul dump` prints `20`                                                   |
-| `idiv`             | Integer division; produces quotient and remainder           | `20 6 idiv 1 rem dump` prints quotient, `20 6 idiv 2 rem prt` prints remainder|
-| `rem`\*              | Remove an item from the stack by position                   | `34 35 36 2 rem` removes second from top (35)                                 |
-| `sl`               | Get the current number of items in the stack                | `sl dump.a` prints the stack length                                           |
-| `sclr`             | Clear the stack                                             | `sclr` removes all items from the stack                                       |
-| `ltm.[register]`   | Loads from the top of the stack to the specified register   | `ltm.a` the top of the stack goes into rax                                    |
-| `lfm.[register]`   | Loads from the specified register to the top of the stack   | `lfm.a` rax goes onto the stack                                               |
+\* i stands for Integer \
+\*\* Stack index in required, Top of stack is 1.
 
-\* rem != remainder, rem is REMOVE
+Note.
+`dump` is just a 'faster' version of `print`
 
 ---
 
@@ -144,9 +148,9 @@ Prints:
 34 35 sum dump
 "-----------------------------------------------\n" dump
 "20 // 6 = " dump
-20 6 idiv 1 rem dump
+20 6 idiv 1 trash dump
 "20 %% 6 = " dump
-20 6 idiv 2 rem dump
+20 6 idiv 2 trash dump
 "-----------------------------------------------\n" dump
 34 35
 "stack len: " dump
@@ -154,6 +158,7 @@ sl dump.a
 sclr
 "-----------------------------------------------\n" dump
 35 34 sum ltm.1 dump.1
+200 100 sub ltm.1 lfm.1 dump
 "-----------------------------------------------\n" dump
 "104 - 4 = %d, %s, %s\n" ltm.1
 104 4 sub ltm.2

@@ -3,7 +3,7 @@ import sys
 import difflib
 
 i = 0
-def ilda(reset = False):
+def rust_enum(reset = False):
     global i
     if reset:
         i = 0
@@ -11,26 +11,26 @@ def ilda(reset = False):
     i += 1
     return result
 
-OP_PUSH = ilda(True)
-OP_PUSHSTRING = ilda()
-OP_PLUS = ilda()
-OP_SUB = ilda()
-OP_MUL = ilda()
-OP_IDIV = ilda()
-OP_PRINT = ilda()
-OP_DUMP = ilda()
-OP_DUMPMEMORY = ilda()
-OP_DEBUGDUMP = ilda()
-OP_REMOVE = ilda()
-OP_STACKLEN = ilda()
-OP_STACKCLEAR = ilda()
-OP_LOADTOMEMORY = ilda()
-OP_LOADFROMMEMORY = ilda()
-OP_USAGE = ilda()
+OP_PUSH = rust_enum(True)
+OP_PUSHSTRING = rust_enum()
+OP_PLUS = rust_enum()
+OP_SUB = rust_enum()
+OP_MUL = rust_enum()
+OP_IDIV = rust_enum()
+OP_PRINT = rust_enum()
+OP_DUMP = rust_enum()
+OP_DUMPMEMORY = rust_enum()
+OP_DEBUGDUMP = rust_enum()
+OP_TRASH = rust_enum()
+OP_STACKLEN = rust_enum()
+OP_STACKCLEAR = rust_enum()
+OP_LOADTOMEMORY = rust_enum()
+OP_LOADFROMMEMORY = rust_enum()
+OP_USAGE = rust_enum()
 
-H_PRINTF = ilda(True)
-H_REMOVE = ilda()
-H_STACKLEN = ilda()
+H_PRINTF = rust_enum(True)
+H_TRASH = rust_enum()
+H_STACKLEN = rust_enum()
 
 class bcolors:
     HEADER = '\033[95m'
@@ -118,8 +118,8 @@ def DebugDump():
 def DumpMemory(x):
     return (OP_DUMPMEMORY, x)
 
-def Remove():
-    return (OP_REMOVE, )
+def Trash():
+    return (OP_TRASH, )
 
 def StackLen():
     return (OP_STACKLEN, )
@@ -174,9 +174,9 @@ Keywords = {
         "function": DebugDump(),
         "helpers": [H_PRINTF]
     },
-    "rem": {
-        "function": Remove(),
-        "helpers": [H_REMOVE]
+    "trash": {
+        "function": Trash(),
+        "helpers": [H_TRASH]
     },
     "sl": {
         "function": StackLen(),
@@ -344,7 +344,7 @@ def print_helpers(f):
     f.write("    ret\n")
     f.write("\n")
     
-def remove_helpers(f):
+def trash_helpers(f):
     f.write("global remove_nth\n")
     f.write("; RCX = M, RDX = N\n")
     f.write("; clobbers: RAX,R8,R9,R10,R11\n")
@@ -448,8 +448,6 @@ def printf(f):
     f.write("    call printf\n")
     f.write("    add rsp, 32\n")
 
-def check_math(stack):
-    assert str(stack[-1]).isdigit(), "Can't Do Math Operations with a String"
 
 def parse_string_var(s):
     # s is the full quoted string, e.g. '"foo\n"'
@@ -528,75 +526,98 @@ def parse_string_var(s):
     return result
 
 def generate_code(program, temp_path):
-    stack = []
-    with open(temp_path,"w") as f:
+    def check_math(stack,op):
+        if stack[-1][0] != "int" or stack[-2][0] != "int":
+            Error(f"Type error: '{op}' expects two ints, got {stack[-2][1]} as {stack[-2][0]} and {stack[-1][1]} as {stack[-1][0]}")
+            
+    stack: list[tuple] = []
+    with open(temp_path, "w") as f:
         f.write("global main\n")
         if H_PRINTF in helpers_needed:
-            f.write("extern printf\n") 
+            f.write("extern printf\n")
         f.write("extern ExitProcess\n")
         f.write("\n")
         f.write("section .data\n")
         f.write("StackBase dq 0\n")
-            
+
         f.write("fmt db \"%d\",10,0\n")
         for i in strings:
-            f.write("S_%d db %s,0\n" % (i[0],','.join(parse_string_var(i[1]))))
+            f.write("S_%d db %s,0\n" % (i[0], ','.join(parse_string_var(i[1]))))
         f.write("\n")
         f.write("section .text\n")
-        
+
         if H_PRINTF in helpers_needed:
             print_helpers(f)
-        if H_REMOVE in helpers_needed:
-            remove_helpers(f)
+        if H_TRASH in helpers_needed:
+            trash_helpers(f)
         if H_STACKLEN in helpers_needed:
             stack_len_helpers(f)
-            
+
         f.write("main:\n")
         f.write("    sub rsp, 40\n")
         f.write("    mov [rel StackBase], rsp\n")
-            
-        for i in program:
-            if i[0] == OP_PUSH:
-                f.write("    push %d\n" % i[1])
-                stack.append(i[1])
-            elif i[0] == OP_PUSHSTRING:
-                f.write("    ;%s\n" % i[1][1])
-                f.write("    lea rax, [rel S_%d]\n" % i[1][0])
+
+        for instr in program:
+            op = instr[0]
+
+            if op == OP_PUSH:
+                val = instr[1]
+                f.write("    push %d\n" % val)
+                stack.append(("int", val))
+
+            elif op == OP_PUSHSTRING:
+                sid, token = instr[1]
+                f.write("    ;%s\n" % token)
+                f.write("    lea rax, [rel S_%d]\n" % sid)
                 f.write("    push rax\n")
-                stack.append(i[1][1])
-            elif i[0] == OP_PLUS:
-                assert len(stack) >= 2, "Stack must contain atleast 2 values to perform a sum"
-                check_math(stack)
+                stack.append(("string", token))
+
+            elif op == OP_PLUS:
+                # compile-time sanity
+                if len(stack) < 2:
+                    Error("Stack must contain at least 2 values to perform 'sum'")
+                check_math(stack,"sum")
                 f.write("    ;Add\n")
                 f.write("    pop rax\n")
                 f.write("    pop rbx\n")
                 f.write("    add rax, rbx\n")
                 f.write("    push rax\n")
-                a, b = stack.pop(), stack.pop()
-                stack.append(a + b)
-            elif i[0] == OP_SUB:
-                assert len(stack) >= 2, "Stack must contain atleast 2 values to perform a sub"
-                check_math(stack)
+                a = stack.pop()[1]
+                b = stack.pop()[1]
+                stack.append(("int", a + b))
+
+            elif op == OP_SUB:
+                if len(stack) < 2:
+                    Error("Stack must contain at least 2 values to perform 'sub'")
+                check_math(stack,"sub")
                 f.write("    ;Sub\n")
                 f.write("    pop rbx\n")
                 f.write("    pop rax\n")
                 f.write("    sub rax, rbx\n")
                 f.write("    push rax\n")
-                a, b = stack.pop(), stack.pop()
-                stack.append(b - a)
-            elif i[0] == OP_MUL:
-                assert len(stack) >= 2, "Stack must contain atleast 2 values to perform a sub"
-                check_math(stack)
-                f.write("    ;Sub\n")
+                a = stack.pop()[1]
+                b = stack.pop()[1]
+                stack.append(("int", b - a))
+
+            elif op == OP_MUL:
+                if len(stack) < 2:
+                    Error("Stack must contain at least 2 values to perform 'mul'")
+                check_math(stack,"mul")
+                f.write("    ;Mul\n")
                 f.write("    pop rax\n")
                 f.write("    pop rbx\n")
                 f.write("    imul rax, rbx\n")
                 f.write("    push rax\n")
-                a, b = stack.pop(), stack.pop()
-                stack.append(a * b)
-            elif i[0] == OP_IDIV:
-                assert len(stack) >= 2, "Stack must contain atleast 2 values to perform a sub"
-                check_math(stack)
+                a = stack.pop()[1]
+                b = stack.pop()[1]
+                stack.append(("int", a * b))
+
+            elif op == OP_IDIV:
+                if len(stack) < 2:
+                    Error("Stack must contain at least 2 values to perform 'idiv'")
+                check_math(stack,"idiv")
+                if stack[-1][1] == 0:
+                    Error("Can't IDivide by 0")
                 f.write("    ;IDiv\n")
                 f.write("    pop rbx\n")
                 f.write("    pop rax\n")
@@ -604,57 +625,88 @@ def generate_code(program, temp_path):
                 f.write("    idiv rbx\n")
                 f.write("    push rax\n")
                 f.write("    push rdx\n")
-                a, b = stack.pop(), stack.pop()
-                stack.append(b // a)
-                stack.append(b % a)
-            elif i[0] == OP_PRINT:
+                a = stack.pop()[1]
+                b = stack.pop()[1]
+                stack.append(("int", b // a))
+                stack.append(("int", b % a))
+
+            elif op == OP_PRINT:
                 printf(f)
-            elif i[0] == OP_DUMP:
-                assert len(stack) >= 1, "Stack must contain atleast 1 value to perform a prt"
-                if str(stack[-1]).startswith("\""):
-                    string_print(stack,f)
+
+            elif op == OP_DUMP:
+                if len(stack) < 1:
+                    Error("Stack must contain at least 1 value to perform 'dump'")
+                top_type = stack[-1][0]
+                if top_type == "string":
+                    string_print(stack, f)
                 else:
-                    general_print(stack,f)
-            elif i[0] == OP_DEBUGDUMP:
-                assert len(stack) >= 1, "Stack must contain atleast 1 value to perform a dprt"
-                if str(stack[-1]).startswith("\""):
-                    string_print(stack,f, True)
+                    general_print(stack, f)
+
+            elif op == OP_DEBUGDUMP:
+                if len(stack) < 1:
+                    Error("Stack must contain at least 1 value to perform 'ddump'")
+                top_type = stack[-1][0]
+                if top_type == "string":
+                    string_print(stack, f, True)
                 else:
-                    general_print(stack,f,True)
-            elif i[0] == OP_DUMPMEMORY:
-                mem = Memories[i[1]]
-                memory_general_print(f,mem)
-            elif i[0] == OP_REMOVE:
-                assert len(stack) >= stack[-1], "Stack must contain atleast %d value to perform a rem" % stack[-1]
+                    general_print(stack, f, True)
+
+            elif op == OP_DUMPMEMORY:
+                mem = Memories[instr[1]]
+                memory_general_print(f, mem)
+
+            elif op == OP_TRASH:
+                # top-of-stack is index (1-based). Remove that element from the stack.
+                if len(stack) < 1:
+                    Error("Stack must contain at least 1 value to perform 'trash'")
+                m = len(stack)  # count before popping index
+                idx_item = stack.pop()
+                if idx_item[0] != "int":
+                    Error(f"Type error: 'trash' expects int index on top of stack, got {idx_item[0]}")
+                idx = idx_item[1]
+                if not isinstance(idx, int) or idx < 1 or idx > m - 0:
+                    Error(f"'trash' index out of range: {idx} (stack size {m})")
                 f.write("    ;Remove\n")
-                f.write("    mov rcx, %d ;stack element count\n" % len(stack))
+                f.write("    mov rcx, %d ;stack element count\n" % m)
                 f.write("    pop rax\n")
                 f.write("    mov rdx, rax ;index\n")
                 f.write("    call remove_nth\n")
-                a = -stack.pop()
-                stack.pop(a)
-            elif i[0] == OP_STACKLEN:
+                # remove the N-th element from the Python compilation stack (top == 1)
+                # after popping index, stack length is m-1; delete element at -idx
+                del stack[-idx]
+
+            elif op == OP_STACKLEN:
                 f.write("    ;Stack Len\n")
                 f.write("    call get_stack_len ; put in rax\n")
-            elif i[0] == OP_STACKCLEAR:
+                # optionally keep stack model in sync: push an unknown int placeholder
+                # stack.append(("int", None))
+
+            elif op == OP_STACKCLEAR:
                 f.write("    ;Stack Clear\n")
                 f.write("    mov rsp, [rel StackBase]\n")
                 stack.clear()
-            elif i[0] == OP_LOADTOMEMORY:
-                mem = Memories[i[1]]
+
+            elif op == OP_LOADTOMEMORY:
+                mem = Memories[instr[1]]
                 f.write("    ;Load To Memory\n")
                 f.write("    pop %s\n" % mem)
+                # pop from compile-time stack
                 stack.pop()
-            elif i[0] == OP_LOADFROMMEMORY:
-                mem = Memories[i[1]]
+
+            elif op == OP_LOADFROMMEMORY:
+                mem = Memories[instr[1]]
                 f.write("    ;Load Memory\n")
                 f.write("    push %s\n" % mem)
-                stack.append(None)
-            elif i[0] == OP_USAGE:
-                tok,usage = i[1]
+                # assume registers contain integer-like values at runtime
+                stack.append(("int", None))
+
+            elif op == OP_USAGE:
+                tok, usage = instr[1]
                 Error(f"Usage of \"{tok}\": {usage}")
+
             else:
-                Error("Can Generate the following Operation Index: %s" % i[0])
+                Error("Cannot generate code for operation index: %s" % op)
+
         f.write("    xor ecx, ecx\n")
         f.write("    add rsp, 40\n")
         f.write("    call ExitProcess\n")
@@ -665,9 +717,6 @@ def compile_program(program, temp_path, out_name, run):
     subprocess.call(["gcc","%s.o" % out_name, "-o", "%s.exe" % out_name])
     if run:
         subprocess.call(["%s.exe" % out_name])
-        
-
-    
 
 if __name__ == "__main__":
     arguments = sys.argv
