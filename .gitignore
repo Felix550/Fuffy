@@ -185,3 +185,4 @@ cython_debug/
 *.asm
 *.o
 *.exe
+*.html

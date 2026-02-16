@@ -27,10 +27,33 @@ OP_STACKCLEAR = rust_enum()
 OP_LOADTOMEMORY = rust_enum()
 OP_LOADFROMMEMORY = rust_enum()
 OP_USAGE = rust_enum()
+OP_EXIT = rust_enum()
+OP_CMP = rust_enum()
+OP_LOGIC = rust_enum()
+
+OP_IF = rust_enum()
+OP_ELSE = rust_enum()
+OP_ENDIF = rust_enum()
+
+CMP_EQ = rust_enum(True)
+CMP_NE = rust_enum()
+CMP_GT = rust_enum()
+CMP_LT = rust_enum()
+CMP_GE = rust_enum()
+CMP_LE = rust_enum()
+
+LOGIC_NOT = rust_enum(True)
+LOGIC_AND = rust_enum()
+LOGIC_NAND = rust_enum()
+LOGIC_XAND = rust_enum()
+LOGIC_OR = rust_enum()
+LOGIC_NOR = rust_enum()
+LOGIC_XOR = rust_enum()
 
 H_PRINTF = rust_enum(True)
 H_TRASH = rust_enum()
 H_STACKLEN = rust_enum()
+H_EXIT = rust_enum()
 
 class bcolors:
     HEADER = '\033[95m'
@@ -69,22 +92,31 @@ class PC:
         self.c_index = 0
         self.src = None
         
-def Error(msg, file=None, row=None, col=None):
+def Error(msg, reason=None, fix=None, file=None, row=None, col=None):
+    location = ""
     if file and row and col:
-        print(f"{bcolors.FAIL}{file}:{row}:{col}: Error: {msg}{bcolors.ENDC}")
-    else:
-        print(f"{bcolors.FAIL}Error: {msg}{bcolors.ENDC}")
+        location = f"{file}:{row}:{col} "
+
+    print(f"{bcolors.FAIL}{location}{bcolors.UNDERLINE}Error: {msg}{bcolors.ENDC}{bcolors.FAIL}", end="")
+
+    if reason and reason != "":
+        print(f"\nReason: {reason}", end="")
+
+    if fix and fix != "":
+        print(f"\nPossible Fix: {fix}", end="")
+
+    print(f"{bcolors.ENDC}")
     exit(1)
     
 def Warn(msg, file=None, row=None, col=None):
     if file and row and col:
-        print(f"{bcolors.WARNING}{file}:{row}:{col}: Warning: {msg}{bcolors.ENDC}")
+        print(f"{bcolors.WARNING}{file}:{row}:{col} Warning: {msg}{bcolors.ENDC}")
     else:
         print(f"{bcolors.WARNING}Warning: {msg}{bcolors.ENDC}")
         
 def Success(msg, file=None, row=None, col=None):
     if file and row and col:
-        print(f"{bcolors.OKGREEN}{file}:{row}:{col}: SUCCESS: {msg}{bcolors.ENDC}")
+        print(f"{bcolors.OKGREEN}{file}:{row}:{col} SUCCESS: {msg}{bcolors.ENDC}")
     else:
         print(f"{bcolors.OKGREEN}SUCCESS: {msg}{bcolors.ENDC}")
     
@@ -136,6 +168,18 @@ def LoadFromMemory(x):
 def Usage(tok,usage):
     return (OP_USAGE,(tok,usage)) #Error(f"Usage of \"{tok}\": {usage}")
 
+def Exit():
+    return (OP_EXIT,)
+
+def IF():
+    return (OP_IF,)
+
+def ELSE():
+    return (OP_ELSE,)
+
+def ENDIF():
+    return (OP_ENDIF,)
+
 Memories = {
     "a": "rax",
     "b": "rbx",
@@ -144,6 +188,29 @@ Memories = {
     "3": "r8",
     "4": "r9",
 }
+
+Comparators = {
+    "=":  CMP_EQ,
+    "!=":  CMP_NE,
+    ">":  CMP_GT,
+    "<":  CMP_LT,
+    ">=":  CMP_GE,
+    "<=":  CMP_LE,
+}
+
+Comparators_rev = {v: k for k, v in Comparators.items()}
+
+Logic_Gates = {
+    "not":  (LOGIC_NOT,1),
+    "and":  (LOGIC_AND,2),
+    "nand":  (LOGIC_NAND,2),
+    "xand":  (LOGIC_XAND,2),
+    "or":  (LOGIC_OR,2),
+    "nor":  (LOGIC_NOR,2),
+    "xor":  (LOGIC_XOR,2),
+}
+
+Logic_Gates_rev = {v[0]: k for k, v in Logic_Gates.items()}
 
 Keywords = {
     "sum": {
@@ -193,7 +260,23 @@ Keywords = {
     "lfm": {
         "function": Usage("lfm",f"lfm.[register]\nRegisters:\n\t{"\n\t".join([f".{k} : \"{v}\"" for k, v in Memories.items()])}"),
         "helpers": None
-    }
+    },
+    "exit": {
+        "function": Exit(),
+        "helpers": [H_EXIT]
+    },
+    "if": {
+        "function": IF(),
+        "helpers": None
+    },    
+    "else": {
+        "function": ELSE(),
+        "helpers": None
+    },    
+    "endif": {
+        "function": ENDIF(),
+        "helpers": None
+    },
 }
 
 def tokenize_file(file_path):
@@ -253,6 +336,13 @@ def tokenize_file(file_path):
                     result.append((buff,(row,column)))
                     buff = ""
                     continue
+                elif ch.isprintable() and not ch.isspace():
+                    buff += pc.consume()
+                    while pc.peek() is not None and (pc.peek().isprintable() and not pc.peek().isspace() and not pc.peek().isdigit()):
+                        buff += pc.consume()
+                    result.append((buff,(row,column)))
+                    buff = ""
+                    continue
                 else:
                     pc.consume()
                     continue
@@ -269,18 +359,21 @@ strings = []
 def parse_program_from_tokens(tokens,program_path):
     result = []
 
+    def append_to_result(function,position):
+        result.append((function,position))
+
     for tok, (r, c) in tokens:
         tok: str
         # number
         if tok.isdigit():
-            result.append(Push(int(tok)))
+            append_to_result(Push(int(tok)),(r,c))
             continue
 
         # string
         if tok.startswith('"') and tok.endswith('"'):
             id = 0 if len(strings) == 0 else strings[-1][0] + 1
             strings.append((id, tok))
-            result.append(PushString((id, tok)))
+            append_to_result(PushString((id, tok)),(r,c))
             continue
 
         # comment
@@ -290,20 +383,20 @@ def parse_program_from_tokens(tokens,program_path):
         if tok.startswith("ltm."):
             _,rhs = tok.split(".")
             if rhs == "a" or rhs == "b":
-                Warn(f"Direct manipulation of internal memory locations like \"{Memories[rhs]}\" with \"{tok}\" is strongly discouraged, since these addresses are reserved for the compiler’s internal operations.",program_path,r,c)
-            result.append(LoadToMemory(rhs))
+                Warn(f"direct manipulation of internal memory locations like \"{Memories[rhs]}\" with \"{tok}\" is strongly discouraged, since these addresses are reserved for the compiler’s internal operations",file=program_path,row=r,col=c)
+            append_to_result(LoadToMemory(rhs),(r,c))
             continue
         
         if tok.startswith("lfm."):
             _,rhs = tok.split(".")
-            result.append(LoadFromMemory(rhs))
+            append_to_result(LoadFromMemory(rhs),(r,c))
             continue
         
         if tok.startswith("dump."):
             helpers = [H_PRINTF]
             
             _,rhs = tok.split(".")
-            result.append(DumpMemory(rhs))
+            append_to_result(DumpMemory(rhs),(r,c))
             check_helper(helpers)
             continue
 
@@ -312,13 +405,21 @@ def parse_program_from_tokens(tokens,program_path):
             kw = Keywords[tok]
 
             # function
-            result.append(kw["function"])
+            append_to_result(kw["function"],(r,c))
 
             # helpers
             helpers = kw.get("helpers")
             if helpers:
                 check_helper(helpers)
 
+            continue
+        
+        if tok in Comparators:
+            append_to_result((OP_CMP, Comparators[tok]),(r,c))
+            continue
+        
+        if tok in Logic_Gates:
+            append_to_result((OP_LOGIC, Logic_Gates[tok]),(r,c))
             continue
 
         # invalid token
@@ -329,7 +430,7 @@ def parse_program_from_tokens(tokens,program_path):
             (k for k in Keywords.keys() if difflib.SequenceMatcher(None, k, tok).ratio() >= threshold),
             False
         )
-        Error(f"\"{tok}\" is not a valid keyword{f"\nMaybe you meant: \"{similar_key}\"" if similar_key else ""}",program_path,r,c)
+        Error(f"\"{tok}\" is not a valid keyword",fix=f"maybe you meant: \"{similar_key}\"" if similar_key else "",file=program_path,row=r,col=c)
 
     return result
 
@@ -407,6 +508,14 @@ def stack_len_helpers(f):
     f.write(".zero:\n")
     f.write("    xor rax, rax\n")
     f.write("    ret\n")
+    
+def exit_helpers(f):
+    f.write("exit_with_code:\n")
+    f.write("    mov rax, [rsp + 8]    ; leggi il qword sotto il return address\n")
+    f.write("    mov ecx, eax          ; primo argomento = codice di uscita (lower 32 bit)\n")
+    f.write("    sub rsp, 32           ; shadow space per Windows x64\n")
+    f.write("    call ExitProcess\n")
+    f.write("    add rsp, 32\n")
 
 def general_print(stack, f, debug = False):
     if debug:
@@ -525,12 +634,15 @@ def parse_string_var(s):
 
     return result
 
-def generate_code(program, temp_path):
+def generate_code(program, temp_path, program_path):
     def check_math(stack,op):
         if stack[-1][0] != "int" or stack[-2][0] != "int":
-            Error(f"Type error: '{op}' expects two ints, got {stack[-2][1]} as {stack[-2][0]} and {stack[-1][1]} as {stack[-1][0]}")
+            Error(f"'{op}' expects two ints.",reason=f"Got {stack[-2][1]} as {stack[-2][0]} and {stack[-1][1]} as {stack[-1][0]}.")
             
     stack: list[tuple] = []
+    
+    if_counter = 0
+    if_context = []
     with open(temp_path, "w") as f:
         f.write("global main\n")
         if H_PRINTF in helpers_needed:
@@ -552,12 +664,15 @@ def generate_code(program, temp_path):
             trash_helpers(f)
         if H_STACKLEN in helpers_needed:
             stack_len_helpers(f)
+        if H_EXIT in helpers_needed:
+            exit_helpers(f)
 
         f.write("main:\n")
         f.write("    sub rsp, 40\n")
         f.write("    mov [rel StackBase], rsp\n")
 
-        for instr in program:
+        last_i = 0
+        for i, (instr, (r,c)) in enumerate(program):
             op = instr[0]
 
             if op == OP_PUSH:
@@ -575,7 +690,7 @@ def generate_code(program, temp_path):
             elif op == OP_PLUS:
                 # compile-time sanity
                 if len(stack) < 2:
-                    Error("Stack must contain at least 2 values to perform 'sum'")
+                    Error("stack must contain at least 2 values to perform 'sum'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 check_math(stack,"sum")
                 f.write("    ;Add\n")
                 f.write("    pop rax\n")
@@ -588,7 +703,7 @@ def generate_code(program, temp_path):
 
             elif op == OP_SUB:
                 if len(stack) < 2:
-                    Error("Stack must contain at least 2 values to perform 'sub'")
+                    Error("stack must contain at least 2 values to perform 'sub'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 check_math(stack,"sub")
                 f.write("    ;Sub\n")
                 f.write("    pop rbx\n")
@@ -601,7 +716,7 @@ def generate_code(program, temp_path):
 
             elif op == OP_MUL:
                 if len(stack) < 2:
-                    Error("Stack must contain at least 2 values to perform 'mul'")
+                    Error("stack must contain at least 2 values to perform 'mul'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 check_math(stack,"mul")
                 f.write("    ;Mul\n")
                 f.write("    pop rax\n")
@@ -614,10 +729,10 @@ def generate_code(program, temp_path):
 
             elif op == OP_IDIV:
                 if len(stack) < 2:
-                    Error("Stack must contain at least 2 values to perform 'idiv'")
+                    Error("stack must contain at least 2 values to perform 'idiv'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 check_math(stack,"idiv")
                 if stack[-1][1] == 0:
-                    Error("Can't IDivide by 0")
+                    Error("can't IDivide by 0",reason="Yea ofc DUH!",file=program_path,row=r,col=c)
                 f.write("    ;IDiv\n")
                 f.write("    pop rbx\n")
                 f.write("    pop rax\n")
@@ -635,7 +750,7 @@ def generate_code(program, temp_path):
 
             elif op == OP_DUMP:
                 if len(stack) < 1:
-                    Error("Stack must contain at least 1 value to perform 'dump'")
+                    Error("stack must contain at least 1 value to perform 'dump'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 top_type = stack[-1][0]
                 if top_type == "string":
                     string_print(stack, f)
@@ -644,7 +759,7 @@ def generate_code(program, temp_path):
 
             elif op == OP_DEBUGDUMP:
                 if len(stack) < 1:
-                    Error("Stack must contain at least 1 value to perform 'ddump'")
+                    Error("stack must contain at least 1 value to perform 'ddump'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 top_type = stack[-1][0]
                 if top_type == "string":
                     string_print(stack, f, True)
@@ -658,14 +773,14 @@ def generate_code(program, temp_path):
             elif op == OP_TRASH:
                 # top-of-stack is index (1-based). Remove that element from the stack.
                 if len(stack) < 1:
-                    Error("Stack must contain at least 1 value to perform 'trash'")
+                    Error("stack must contain at least 1 value to perform 'trash'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
                 m = len(stack)  # count before popping index
                 idx_item = stack.pop()
                 if idx_item[0] != "int":
-                    Error(f"Type error: 'trash' expects int index on top of stack, got {idx_item[0]}")
+                    Error(f"'trash' expects int index on top of stack",reason=f"got {idx_item[0]}",file=program_path,row=r,col=c)
                 idx = idx_item[1]
                 if not isinstance(idx, int) or idx < 1 or idx > m - 0:
-                    Error(f"'trash' index out of range: {idx} (stack size {m})")
+                    Error(f"'trash' index out of range.",reason=f"index: {idx} / Stack Size: {m}",file=program_path,row=r,col=c)
                 f.write("    ;Remove\n")
                 f.write("    mov rcx, %d ;stack element count\n" % m)
                 f.write("    pop rax\n")
@@ -695,24 +810,150 @@ def generate_code(program, temp_path):
 
             elif op == OP_LOADFROMMEMORY:
                 mem = Memories[instr[1]]
-                f.write("    ;Load Memory\n")
+                f.write("    ;Load From Memory\n")
                 f.write("    push %s\n" % mem)
                 # assume registers contain integer-like values at runtime
                 stack.append(("int", None))
 
             elif op == OP_USAGE:
                 tok, usage = instr[1]
-                Error(f"Usage of \"{tok}\": {usage}")
+                Error(f"wrong Usage of \"{tok}\"",fix=usage,file=program_path,row=r,col=c)
+                
+            elif op == OP_EXIT:
+                if len(stack) < 1:
+                    Error("stack must contain at least 1 value to perform 'exit'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
+                code = stack.pop()
+                if code[0] != "int":
+                    Error(f"'exit' expects int err code",reason=f"got {code[0]}",file=program_path,row=r,col=c)
+                f.write("    call exit_with_code\n")
+                  
+            elif op == OP_CMP:
+                cmp_type = instr[1]
+                
+                if len(stack) < 2:
+                    Error("stack must contain at least 2 values to perform a comparation: '%s'." % Comparators_rev[cmp_type],reason=f"current stack size is: {len(stack)}.",file=program_path,row=r,col=c)
+                    
+                f.write("    ;Comparator %s\n" % Comparators_rev[cmp_type])
+                f.write("    pop rbx\n")
+                f.write("    pop rax\n")
+                f.write("    cmp rax, rbx\n")
+                
+                if cmp_type == CMP_GT:
+                    f.write("    setg al\n")
+                elif cmp_type == CMP_LT:
+                    f.write("    setl al\n")
+                elif cmp_type == CMP_EQ:
+                    f.write("    sete al\n")
+                elif cmp_type == CMP_NE:
+                    f.write("    setne al\n")
+                elif cmp_type == CMP_GE:
+                    f.write("    setge al\n")
+                elif cmp_type == CMP_LE:
+                    f.write("    setle al\n")
+                else:
+                    Error("cannot generate code for comparation: %s" % cmp_type,file=program_path,row=r,col=c)  
+                    
+                f.write("    movzx rax, al\n")
+                f.write("    push rax\n")
 
+                stack.pop()
+                stack.pop()
+                stack.append(("int", None))
+            elif op == OP_LOGIC:
+                logic_type = instr[1][0]
+                required_stack = instr[1][1]
+                name = Logic_Gates_rev[logic_type]
+                if len(stack) < required_stack:
+                    Error("stack must contain at least %d values to perform '%s'" % (required_stack,name),reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
+                
+                f.write("    ;Logic Gate %s\n" % name)
+                if required_stack > 1:
+                    f.write("    pop rbx\n")
+                    stack.pop()
+                    
+                f.write("    pop rax\n")
+                stack.pop()
+                
+                if logic_type == LOGIC_NOT:
+                    f.write("    xor rax, 1\n")
+                elif logic_type == LOGIC_AND:
+                    f.write("    and rax, rbx\n")
+                elif logic_type == LOGIC_NAND:
+                    f.write("    and rax, rbx\n")
+                    f.write("    xor rax, 1\n")
+                elif logic_type == LOGIC_XAND:
+                    f.write("    cmp rax, rbx\n")
+                    f.write("    sete al\n")
+                    f.write("    movzx rax, al\n")
+                elif logic_type == LOGIC_OR:
+                    f.write("    or rax, rbx\n")
+                elif logic_type == LOGIC_NOR:
+                    f.write("    or rax, rbx\n")
+                    f.write("    xor rax, 1\n")
+                elif logic_type == LOGIC_XOR:
+                    f.write("    cmp rax, rbx\n")
+                    f.write("    setne al\n")
+                    f.write("    movzx rax, al\n")
+                else:
+                    Error("cannot generate code for logic gate: %s" % logic_type,file=program_path,row=r,col=c)  
+                
+                f.write("    push rax\n")
+                
+                stack.append(("int", None))
+            elif op == OP_IF:
+                if len(stack) < 1:
+                    Error("stack must contain at least 1 value to perform: 'if'",reason=f"current stack size is: {len(stack)}",file=program_path,row=r,col=c)
+                if_counter += 1
+                if_context.append({"id":if_counter,"has_else":False,"pos":(r,c),"else_pos":None,"i":i})
+                f.write("    pop rax\n")
+                f.write("    test rax, rax\n")
+                f.write("    jz .L_ELSE_OR_END_%d\n" % if_counter)
+                
+                stack.pop()
+            elif op == OP_ELSE:
+                if len(if_context) < 1:
+                    Error("unexpected 'else'",reason="there is no active IF block to negate.",fix="remove 'else' or add a matching 'if' and 'endif'",file=program_path,row=r,col=c)
+                if_block = if_context[-1]
+                if_block["has_else"] = True
+                if_block["else_pos"] = (r,c)
+                
+                if_id = if_block["id"]
+                f.write("    jmp .L_END_%d\n" % if_id)
+                f.write("    .L_ELSE_OR_END_%d:\n" % if_id)
+                
+                if if_block["i"] == i - 1:
+                    Warn(f"unused then block.",file=program_path,row=if_block["pos"][0],col=if_block["pos"][1])
+                    
+                if_block["i"] = i
+                
+            elif op == OP_ENDIF:
+                if len(if_context) < 1:
+                    Error("unexpected 'endif'",reason="there is no active IF block to close",fix="remove 'endif' or add a matching 'if'",file=program_path,row=r,col=c)
+                if_block = if_context[-1]
+                
+                f.write("    %s_%d:\n" % (".L_END" if if_block["has_else"] else ".L_ELSE_OR_END", if_block["id"]))
+                
+                if if_block["i"] == i - 1:
+                    pos = (if_block["else_pos"][0] if if_block["has_else"] else if_block["pos"][0],
+                           if_block["else_pos"][1] if if_block["has_else"] else if_block["pos"][1])
+                    Warn(f"unused {"else" if if_block["has_else"] else "if"} block.",file=program_path,row=pos[0],col=pos[1])
+                
+                if_context.pop()
             else:
-                Error("Cannot generate code for operation index: %s" % op)
+                Error("cannot generate code for operation index: %s" % op,file=program_path,row=r,col=c)
+                
+            last_i = i #Something
 
+        if len(if_context) > 0:
+            r_opened,c_opened = if_context[-1]["pos"]
+            Error(f"unclosed 'if' block",reason="the IF block was never terminated",fix="insert 'endif' at the end of the IF block",file=program_path,row=r_opened,col=c_opened)
+                
         f.write("    xor ecx, ecx\n")
-        f.write("    add rsp, 40\n")
+        f.write("    sub rsp, 32\n")
         f.write("    call ExitProcess\n")
 
 def compile_program(program, temp_path, out_name, run):
-    generate_code(program, temp_path)
+    generate_code(program, temp_path, program_path)
     subprocess.call(["nasm","-f","win64",temp_path,"-o","%s.o" % out_name])
     subprocess.call(["gcc","%s.o" % out_name, "-o", "%s.exe" % out_name])
     if run:
