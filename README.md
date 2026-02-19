@@ -1,4 +1,4 @@
-# Fuffy — User Guide
+# Fuffy - User Guide
 
 Fuffy is a lazy stack-based programming language for Windows x64.
 
@@ -57,6 +57,8 @@ If you put ```-mtc``` the program will ignore all the others aarguments and only
 | `ltm.[register]`  | Moves the top stack value into the specified register.       | `ltm.a` Moves the top stack value into `rax`                                       |
 | `lfm.[register]`  | Pushes the value from the specified register onto the stack. | `lfm.a` rax goes onto the stack                                                    |
 | `exit`            | Exits with the return code found on top of the stack         | `69 exit` exits with code 69                                                       |
+| `dup`             | Duplicate the top of the stack                               | `69 dup` stack now is `69, 69`                                                     |
+
 
 \* i stands for Integer \
 \*\* Stack index is required, Top of stack is 1.
@@ -174,7 +176,7 @@ else
 endif
 ```
 
-### Examples
+#### Examples
 
 **Basic condition**
 
@@ -238,6 +240,83 @@ greater and less
 * The condition value is always removed from the stack.
 * Empty `if` or `else` blocks are allowed but may produce warnings.
 
+### `while`
+
+Executes a block **while** a condition value on the stack is **non-zero**.
+
+**Behavior**
+
+1. The token sequence immediately before `while` must leave **two** items on the stack: the loop **state/value** (below) and a **condition** (top).
+2. `while` **pops** the condition.
+
+   * If the condition is `0`, execution jumps to the matching `endwhile`.
+   * If the condition is non-zero, execution enters the loop body with the loop state still on the stack.
+3. The loop **body** executes. Before `endwhile` is reached, the body **must** push a new condition (together with the loop state below it) so the `endwhile` can pop that condition and repeat or exit.
+
+Again Non-zero values are treated as **true**.
+
+#### Syntax
+
+```
+<enter-condition> while
+    ... body ...
+    <loop-condition>
+endwhile
+```
+
+#### Minimal example - countdown 5 → 1
+
+```
+5
+dup 0 >      ; leaves: 5 <cond>  (cond = (top > 0))
+while
+    dup dump ; print top (keeps the state below)
+    1 sub    ; decrement state
+    dup 0 >  ; push new condition (state, cond)
+endwhile
+```
+
+Prints:
+
+```
+5
+4
+3
+2
+1
+```
+
+#### Example - print 1..5 (incrementing)
+
+```
+1
+dup 5 <=    ; leaves: 1 <cond>  (cond = top <= 5)
+while
+    dup dump
+    1 sum
+    dup 5 <= ; prepare next condition
+endwhile
+```
+
+Prints:
+
+```
+1
+2
+3
+4
+5
+```
+
+#### Notes
+
+* The most common pattern for the `<condition>` is `dup <const> <cmp>`.
+* `while` only consumes the boolean;
+* `endwhile` pops the condition and jumps back to the `while` start.
+* If the body accidentally consumes the state without pushing it back (or fails to push a new condition), you will get stack underflow or an error like `stack must contain at least 1 value to perform ...`.
+* You can nest `while` loops; each must generate and manage its own condition.
+* Use `trash`, `ltm`, `lfm` and other stack-mutating ops carefully inside the body.
+
 ---
 
 ## Functions
@@ -264,6 +343,39 @@ Prints:
 ```
 104 - 4 = 100, :), Hello
 ```
+
+### User Declared Functions
+
+So UHM, Custom functions `ARE` are a thing, but ehm, they don't work very well, they desync the virtual stack and other things... i suggest to not use them for now but anyway...
+
+To declare a function the syntax is:
+```
+func <name>
+    --- body ---
+endfunc
+```
+
+And to call you just:
+```
+<name>
+```
+
+If you want to have `SOME` arguments well, check out `ltm.<register>` and `lfm.<register>`
+
+Note:
+* Functions have the least priority in the parser, so if you name a function like `dump` the `dump` keyword will be called, and not the function.
+* On the asm side functions are globally accessible, on the compiler side you have to declare a function before using it.
+* On the compiler side, the custom function and the main program `DO NOT` share the stack. So if we have something like:
+  ```
+    func test
+        100
+    endfunc
+
+    test
+    dump
+  ```
+  It will throw an Error saying `dump` can't be called becouse the stack is empty.
+* PLEASE DON'T USE THEM! THEY ARE IN ALPHA! Or even worse!
 
 ---
 
@@ -332,4 +444,20 @@ else1
 Exit Code:
 ```text
 69
+```
+
+### Fizzbuzz example
+```text
+1 1
+while
+    dup dup 15 idiv 2 trash 0 = ; is divisible by 15 (both 3 and 5)?
+    if "fizzbuzz\n" dump
+    else dup 3 idiv 2 trash 0 = ; is divisible by 3?
+    if "fizz\n"dump 
+    else dup 5 idiv 2 trash 0 = ; is divisible by 5?
+    if "buzz\n" dump
+    else dump endif endif endif
+    1 sum
+    dup 100 <=
+endwhile
 ```
